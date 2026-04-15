@@ -6,7 +6,7 @@ import socket
 import sys
 import time
 
-from telemutter_py.envelope import FrameWrite, Receiver, Sid, SidMode, crc32_ieee, write_frame
+from telemutter_py.envelope import FrameError, FrameWrite, Receiver, Sid, SidMode, crc32_ieee, write_frame
 
 X = 16
 S = 2
@@ -81,7 +81,7 @@ def mode_recv(host: str, port: int, timeout_ms: int) -> int:
                 continue
             try:
                 r.process_frame(data, S)
-            except Exception:
+            except FrameError:
                 continue
             if r.schema_bytes() == SCHEMA:
                 return 0

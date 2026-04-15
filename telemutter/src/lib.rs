@@ -443,9 +443,13 @@ impl<const N: usize> Receiver<N> {
             });
             self.active_sid = Some(sid);
             self.append_schema_chunk(parsed.schema_chunk)?;
+            let event = match self.progress_event() {
+                Some(SchemaEvent::Complete { .. }) => self.progress_event(),
+                _ => Some(SchemaEvent::Started { sid }),
+            };
             return Ok(ProcessedFrame {
                 payload: parsed.payload,
-                event: Some(SchemaEvent::Started { sid }),
+                event,
             });
         }
 
@@ -455,6 +459,11 @@ impl<const N: usize> Receiver<N> {
             payload: parsed.payload,
             event,
         })
+    }
+
+    fn abort_assembly(&mut self) {
+        self.assembly = None;
+        self.active_sid = None;
     }
 
     fn append_schema_chunk(&mut self, chunk: &[u8]) -> Result<(), FrameError> {
@@ -473,33 +482,46 @@ impl<const N: usize> Receiver<N> {
 
         asm.frames_seen += 1;
         if asm.frames_seen > self.max_schema_frames {
-            self.assembly = None;
+            self.abort_assembly();
             return Err(FrameError::SchemaFrameBudgetExceeded);
         }
 
-        for &b in chunk {
+        // Prefix-discovery phase: copy byte-by-byte until CBOR bstr total length is known.
+        let mut chunk_off = 0usize;
+        while chunk_off < chunk.len() && asm.expected_total.is_none() {
             if asm.received >= self.max_schema_bytes || asm.received >= N {
-                self.assembly = None;
+                self.abort_assembly();
                 return Err(FrameError::SchemaTooLarge);
             }
-            self.schema_buf[asm.received] = b;
+            self.schema_buf[asm.received] = chunk[chunk_off];
             asm.received += 1;
+            chunk_off += 1;
 
-            if asm.expected_total.is_none() {
-                asm.expected_total = cbor_bstr_total_len(&self.schema_buf[..asm.received])?;
-                if let Some(total) = asm.expected_total
-                    && (total > self.max_schema_bytes || total > N)
-                {
-                    self.assembly = None;
-                    return Err(FrameError::SchemaTooLarge);
+            asm.expected_total = match cbor_bstr_total_len(&self.schema_buf[..asm.received]) {
+                Ok(v) => v,
+                Err(e) => {
+                    self.abort_assembly();
+                    return Err(e);
                 }
-            }
-
+            };
             if let Some(total) = asm.expected_total
-                && asm.received == total
+                && (total > self.max_schema_bytes || total > N)
             {
-                break;
+                self.abort_assembly();
+                return Err(FrameError::SchemaTooLarge);
             }
+        }
+
+        // Bulk-copy phase once total length is known.
+        if let Some(total) = asm.expected_total
+            && chunk_off < chunk.len()
+            && asm.received < total
+        {
+            let remaining = total - asm.received;
+            let take = remaining.min(chunk.len() - chunk_off);
+            self.schema_buf[asm.received..asm.received + take]
+                .copy_from_slice(&chunk[chunk_off..chunk_off + take]);
+            asm.received += take;
         }
 
         if let Some(total) = asm.expected_total
@@ -510,14 +532,14 @@ impl<const N: usize> Receiver<N> {
                 Sid::Sid32(expected) => {
                     let got = crc32_ieee(schema);
                     if got != expected {
-                        self.assembly = None;
+                        self.abort_assembly();
                         return Err(FrameError::SchemaCrcMismatch);
                     }
                 }
                 Sid::Sid8(expected) => {
                     let got = (crc32_ieee(schema) & 0xFF) as u8;
                     if got != expected {
-                        self.assembly = None;
+                        self.abort_assembly();
                         return Err(FrameError::SchemaCrcMismatch);
                     }
                 }
@@ -639,9 +661,13 @@ mod tests {
         let frame = [vft(true, SidMode::Sid8), sid8, 0x40, 1, 2, 3, 4, 5];
         let out = r.process_frame(&frame, 2).unwrap();
         assert_eq!(out.payload, &[1, 2, 3, 4, 5]);
+        // Schema fits in one frame, so we get Complete directly.
         assert!(matches!(
             out.event,
-            Some(SchemaEvent::Started { sid: Sid::Sid8(_) })
+            Some(SchemaEvent::Complete {
+                sid: Sid::Sid8(_),
+                schema_len: 1
+            })
         ));
 
         let frame2 = [

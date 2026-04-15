@@ -245,6 +245,10 @@ class Receiver:
             return bytes(self.schema_buf[:n])
         return None
 
+    def _abort_assembly(self) -> None:
+        self.assembly = None
+        self._active_sid = None
+
     def process_frame(self, frame: bytes, schema_lane_bytes: int) -> ProcessedFrame:
         parsed = parse_frame(frame, schema_lane_bytes, PROTOCOL_VERSION)
         if parsed.vft.schema_start:
@@ -253,7 +257,12 @@ class Receiver:
             self.assembly = AssemblyState(parsed.sid, 0, None, 0)
             self._active_sid = parsed.sid
             self._append_schema_chunk(parsed.schema_chunk)
-            return ProcessedFrame(payload=parsed.payload, event=SchemaStarted(parsed.sid))
+            evt = self._progress_event()
+            if isinstance(evt, SchemaComplete):
+                event: SchemaStarted | SchemaProgress | SchemaComplete | None = evt
+            else:
+                event = SchemaStarted(parsed.sid)
+            return ProcessedFrame(payload=parsed.payload, event=event)
 
         self._append_schema_chunk(parsed.schema_chunk)
         return ProcessedFrame(payload=parsed.payload, event=self._progress_event())
@@ -269,7 +278,7 @@ class Receiver:
 
         asm.frames_seen += 1
         if asm.frames_seen > self.max_schema_frames:
-            self.assembly = None
+            self._abort_assembly()
             raise FrameError("SchemaFrameBudgetExceeded")
         chunk_off = 0
         chunk_len = len(chunk)
@@ -278,17 +287,21 @@ class Receiver:
         if asm.expected_total is None:
             while chunk_off < chunk_len and asm.expected_total is None:
                 if asm.received >= self.max_schema_bytes or asm.received >= self.buf_capacity:
-                    self.assembly = None
+                    self._abort_assembly()
                     raise FrameError("SchemaTooLarge", expected=self.max_schema_bytes, actual=asm.received + 1)
 
                 self.schema_buf[asm.received] = chunk[chunk_off]
                 asm.received += 1
                 chunk_off += 1
 
-                maybe_total = _cbor_bstr_total_len_from_buf(self.schema_buf, asm.received)
+                try:
+                    maybe_total = _cbor_bstr_total_len_from_buf(self.schema_buf, asm.received)
+                except FrameError:
+                    self._abort_assembly()
+                    raise
                 asm.expected_total = maybe_total
                 if maybe_total is not None and (maybe_total > self.max_schema_bytes or maybe_total > self.buf_capacity):
-                    self.assembly = None
+                    self._abort_assembly()
                     raise FrameError("SchemaTooLarge", expected=self.max_schema_bytes, actual=maybe_total)
 
         # Bulk-copy phase once we know how much schema stream remains.
@@ -304,11 +317,11 @@ class Receiver:
             sid: Sid = asm.sid
             if sid.mode == SidMode.SID32:
                 if crc32_ieee(schema) != (sid.value & 0xFFFFFFFF):
-                    self.assembly = None
+                    self._abort_assembly()
                     raise FrameError("SchemaCrcMismatch")
             else:
                 if (crc32_ieee(schema) & 0xFF) != (sid.value & 0xFF):
-                    self.assembly = None
+                    self._abort_assembly()
                     raise FrameError("SchemaCrcMismatch")
 
         self.assembly = asm
