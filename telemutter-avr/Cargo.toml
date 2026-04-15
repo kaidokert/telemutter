@@ -1,0 +1,13 @@
+[package]
+name = "telemutter-avr"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+telemutter = { path = "../telemutter" }
+
+[[bin]]
+name = "telemutter-avr"
+path = "src/main.rs"
+test = false
+bench = false

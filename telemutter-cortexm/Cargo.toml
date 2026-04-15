@@ -1,0 +1,18 @@
+[package]
+name = "telemutter-cortexm"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+telemutter = { path = "../telemutter" }
+
+[target.'cfg(target_arch = "arm")'.dependencies]
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+panic-halt = "1"
+
+[[bin]]
+name = "telemutter-cortexm"
+path = "src/main.rs"
+test = false
+bench = false
