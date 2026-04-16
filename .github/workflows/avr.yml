@@ -1,0 +1,29 @@
+name: AVR Check
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+  pull_request:
+
+jobs:
+  avr:
+    name: AVR check (crate config)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install nightly toolchain for AVR
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly-2025-11-01
+          components: rust-src
+
+      - name: Cache Rust deps
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo check (avr wrapper crate, core only)
+        working-directory: telemutter-avr
+        run: cargo +nightly-2025-11-01 check --lib --bins

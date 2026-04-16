@@ -1,0 +1,7 @@
+[workspace]
+members = [
+  "telemutter",
+  "telemutter-avr",
+  "telemutter-cortexm",
+]
+resolver = "2"

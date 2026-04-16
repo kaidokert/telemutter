@@ -1,0 +1,10 @@
+[build]
+target = "avr-none"
+rustflags = ["-C", "target-cpu=atmega2560", "-C", "panic=abort"]
+
+[unstable]
+build-std = ["core"]
+
+[target.avr-none]
+# Optional runner for local simavr workflows.
+runner = "simavr -m atmega2560 -f 16000000"

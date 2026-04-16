@@ -1,0 +1,12 @@
+[package]
+name = "telemutter"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+diagnostic-errors = []
+
+[dependencies]
+crc-any = { version = "2", default-features = false }
+minicbor = { version = "2.2.1", default-features = false }

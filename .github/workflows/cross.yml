@@ -1,0 +1,28 @@
+name: Cross Compile
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+  pull_request:
+
+jobs:
+  cortexm:
+    name: Cortex-M check (crate config)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv6m-none-eabi
+
+      - name: Cache Rust deps
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo check (cortexm wrapper crate)
+        working-directory: telemutter-cortexm
+        run: cargo check --lib --bins
