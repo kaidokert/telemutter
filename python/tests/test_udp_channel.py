@@ -1,7 +1,7 @@
 import socket
 import unittest
 
-from telemutter_py.envelope import FrameWrite, Receiver, Sid, SidMode, crc32_ieee, write_frame
+from telemutter_py.envelope import FrameError, FrameWrite, Receiver, Sid, SidMode, crc32_ieee, write_frame
 
 
 def schema_bstr(body: bytes) -> bytes:
@@ -56,7 +56,7 @@ class UdpChannelTests(unittest.TestCase):
                     continue
                 try:
                     r.process_frame(data, s)
-                except Exception:
+                except FrameError:
                     continue
                 if r.schema_bytes() == schema:
                     ok = True

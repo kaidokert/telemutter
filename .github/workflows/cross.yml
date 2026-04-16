@@ -25,4 +25,4 @@ jobs:
 
       - name: cargo check (cortexm wrapper crate)
         working-directory: telemutter-cortexm
-        run: cargo check --lib
+        run: cargo check --lib --bins

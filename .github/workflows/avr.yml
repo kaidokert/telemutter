@@ -26,4 +26,4 @@ jobs:
 
       - name: cargo check (avr wrapper crate, core only)
         working-directory: telemutter-avr
-        run: cargo +nightly-2025-11-01 check --lib
+        run: cargo +nightly-2025-11-01 check --lib --bins
